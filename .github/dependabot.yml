@@ -1,0 +1,41 @@
+# Written by repo-starter. Dependency updates: one grouped PR per ecosystem per MONTH, minor and
+# patch only. Major versions change behaviour, so they are never proposed here: plan one as a
+# GitHub issue when you need it. The 7-day cooldown keeps a release out until it has been public
+# for a week, since most broken or malicious releases are pulled within days.
+# Security fixes are separate (Dependabot security updates, in the repository settings) and are
+# not bound by this schedule. A Dependabot PR goes through the same checks as any PR.
+# One `updates` entry per ecosystem the repository uses; `directory` is where its manifest lives.
+version: 2
+
+updates:
+  - package-ecosystem: uv
+    directory: /backend
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    groups:
+      python-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "chore(ci)"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    groups:
+      actions:
+        patterns: ["*"]
+        update-types: [minor, patch]

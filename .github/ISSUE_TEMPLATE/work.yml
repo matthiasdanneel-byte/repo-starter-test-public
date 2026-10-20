@@ -1,0 +1,18 @@
+# Written by repo-starter.
+name: Work item
+description: Something to build or change - a feature, a fix you already understand, a chore.
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What and why
+      description: The outcome, and why it matters. Link a spec or plan if there is one.
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Done when
+      description: How we will know - a check that passes, a screen that shows X, a file that says Y.
+    validations:
+      required: true
