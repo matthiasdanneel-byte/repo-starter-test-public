@@ -1,0 +1,17 @@
+# Written by repo-starter.
+name: Bug
+description: Something behaves wrongly.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens, and what should happen
+      description: One or two sentences each.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to see it
+      description: The steps, and where (which screen, command or file). No passwords or tokens.

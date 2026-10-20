@@ -1,0 +1,75 @@
+# Written by repo-starter. CI for every pull request and every push to main.
+#
+# JOB NAMES ARE LOAD-BEARING. The `main-ci` ruleset requires the job named `checks`; renaming it
+# blocks every merge until the ruleset is changed too. `checks` runs only what passes today.
+# `staged` holds checks that don't pass on the existing code yet: it is never required and never
+# blocks. Promote a check by moving its step from `staged` into `checks`, in its own PR, once it
+# passes; that is the only way a check becomes required. `secret-scan` is not required either:
+# it turns red when a change looks like it holds a key, so the PR shows it, without blocking.
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Deny by default; each job grants only what it needs.
+permissions: {}
+
+concurrency:
+  # Superseded PR runs are cancelled; runs on main never are.
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  checks:
+    name: checks
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: true
+          working-directory: backend
+      - run: uv sync --locked
+        working-directory: backend
+      - run: uv run ruff format --check .
+        working-directory: backend
+      - run: uv run ruff check .
+        working-directory: backend
+      - run: uv run pytest
+        working-directory: backend
+
+  staged:
+    name: staged (not required)
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # repo-starter:staged-steps
+      - name: Staged checks
+        run: echo "Nothing staged. Every check runs in the required checks job." >> "$GITHUB_STEP_SUMMARY"
+
+  secret-scan:
+    name: secret-scan (not required)
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      # TruffleHog OSS (AGPL, free for organisations, unlike gitleaks-action). On a pull request
+      # it scans only the PR's commits. `version` is pinned because the action pulls `latest`.
+      - uses: trufflesecurity/trufflehog@e76dff8a7e57d6df0c60ad8cbf5d5cba505a8fc9 # v3.99.2
+        with:
+          version: 3.99.2
+          extra_args: --results=verified,unknown

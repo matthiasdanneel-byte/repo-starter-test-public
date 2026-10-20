@@ -1,0 +1,130 @@
+# Written by repo-starter. Claude reviews each pull request on GitHub; comment `/review` to re-run.
+#
+# Off until a credential exists: add ONE repository secret (Settings > Secrets and variables >
+# Actions), either CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`, uses your Claude plan) or
+# ANTHROPIC_API_KEY (Claude Console, about $1-2 per review), and install the Claude GitHub App
+# on this repository (https://github.com/apps/claude). Until then every run skips, green.
+#
+# Not a required check: findings are advice. Findings arrive as INLINE comments on the diff; a
+# clean review posts one "No issues found" comment. Check both before merging.
+# Runs on opened / ready_for_review / reopened, not on every push: re-review is `/review`.
+# The model is pinned below (--model) to keep the cost per review predictable. If reviews start
+# failing with a model error, that model has been retired: update the id to a current one.
+# A change to this file cannot be tested from its own PR: the action refuses to run when the
+# workflow differs from the default branch's copy. It takes effect from the next PR.
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, ready_for_review, reopened]
+  issue_comment:
+    types: [created]
+
+permissions: {}
+
+jobs:
+  claude-review:
+    # Non-draft PRs, not Dependabot (its runs get no secrets); `/review` only from people with
+    # write access, so a drive-by commenter cannot spend the budget.
+    if: >-
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.draft == false &&
+       github.event.pull_request.user.login != 'dependabot[bot]') ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request != null &&
+       startsWith(github.event.comment.body, '/review') &&
+       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Job-level, so a plain comment never cancels a queued review; a second /review waits.
+    concurrency:
+      group: claude-review-${{ github.event.pull_request.number || github.event.issue.number }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
+      id-token: write
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+      HAS_CREDENTIAL: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' || secrets.ANTHROPIC_API_KEY != '' }}
+
+    steps:
+      - name: review switched off (no credential yet)
+        if: env.HAS_CREDENTIAL != 'true'
+        run: echo "Claude review is off for this repository until CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY is added as a repository secret." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Checkout repository
+        if: env.HAS_CREDENTIAL == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          # A `/review` comment would otherwise check out main and review that instead of the PR.
+          ref: ${{ github.event_name == 'issue_comment' && format('refs/pull/{0}/head', github.event.issue.number) || '' }}
+
+      - name: mark review start
+        if: env.HAS_CREDENTIAL == 'true'
+        id: started
+        run: echo "at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - name: Run Claude Code Review
+        if: env.HAS_CREDENTIAL == 'true'
+        uses: anthropics/claude-code-action@1d6de8cb0c237e7c15e9e1bdf973826ebae490cc # v1.0.248
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
+          plugins: 'code-review@claude-code-plugins'
+          additional_permissions: |
+            checks: read
+          # `--comment` is load-bearing: without it the plugin posts nothing.
+          prompt: |
+            /code-review:code-review ${{ github.repository }}/pull/${{ env.PR_NUMBER }} --comment
+
+            Constraints for this headless environment:
+            1. Run every subagent in the FOREGROUND and wait for its result. Never end your turn
+               while a subagent is still running: the session ends with it and nothing is posted.
+               Do not stop until the inline comments or the "No issues found" comment are posted.
+            2. If this PR changes CLAUDE.md or anything under .claude/, the files on disk are the
+               base branch's copies; read the PR's version with `git show HEAD:<path>`.
+            3. Do not run tests or install anything: CI runs the checks. Read their results with
+               `gh api repos/{owner}/{repo}/commits/<sha>/check-runs`.
+          track_progress: false
+          display_report: true
+          claude_args: |
+            --model claude-sonnet-5-5
+            --allowedTools "Task,Read,Glob,Grep,mcp__github_inline_comment__create_inline_comment,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr list:*),Bash(gh pr comment:*),Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh search:*),Bash(gh api:*),Bash(git log:*),Bash(git blame:*),Bash(git show:*),Bash(git --no-pager show:*),Bash(git diff:*),Bash(git fetch:*)"
+
+      # A run can finish green and post nothing; this step turns that into a red X.
+      - name: assert the review was delivered
+        if: env.HAS_CREDENTIAL == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SINCE: ${{ steps.started.outputs.at }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # The action skips itself when this file differs from the default branch's copy,
+          # including on the PR that adds it. No review then, by design.
+          self=".github/workflows/claude-code-review.yml"
+          default=$(gh api "repos/$REPO" --jq .default_branch)
+          remote=$(gh api "repos/$REPO/contents/$self?ref=$default" --jq .sha 2>/dev/null) || remote=""
+          if [ -z "$remote" ] || [ "$remote" != "$(git hash-object "$self")" ]; then
+            echo "This PR adds or edits \`$self\`, so the review skipped itself (by design)." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          count() {  # count <pulls|issues> <new|prior>
+            local op='>='; [ "$2" = prior ] && op='<'
+            gh api "repos/$REPO/$1/$PR_NUMBER/comments?per_page=100" \
+              --jq "[.[] | select(.user.login == \"claude[bot]\" and .created_at $op \"$SINCE\")] | length"
+          }
+          new=$(( $(count pulls new) + $(count issues new) ))
+          prior=$(( $(count pulls prior) + $(count issues prior) ))
+          if [ "$new" -gt 0 ]; then
+            echo "Review delivered: $new comment(s) from this run." >> "$GITHUB_STEP_SUMMARY"; exit 0
+          fi
+          if [ "$prior" -gt 0 ]; then
+            echo "No new comments; an earlier run already reviewed this PR." >> "$GITHUB_STEP_SUMMARY"; exit 0
+          fi
+          echo "The review posted nothing, so this PR is unreviewed. Comment /review on the PR to run it again." >> "$GITHUB_STEP_SUMMARY"
+          exit 1

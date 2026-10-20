@@ -1,0 +1,16 @@
+[project]
+name = "reading-list"
+version = "0.1.0"
+description = "Turn a CSV of books into a Markdown reading list"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = []
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.17.1",
+]
