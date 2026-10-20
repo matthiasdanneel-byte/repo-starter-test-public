@@ -6,9 +6,9 @@ from collections.abc import Iterable
 
 
 def render(rows: Iterable[dict[str, str]]) -> str:
-    """Return a Markdown list, one line per book: title, author, and the year read."""
+    """Return a Markdown list, newest year first: title, author, and the year read."""
     lines = ["# Reading list", ""]
-    for row in rows:
+    for row in sorted(rows, key=lambda r: r.get("year", "").strip(), reverse=True):
         line = f"- **{row['title'].strip()}** by {row['author'].strip()}"
         if row.get("year", "").strip():
             line += f" ({row['year'].strip()})"
