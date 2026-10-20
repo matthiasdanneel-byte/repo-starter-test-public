@@ -1,0 +1,8 @@
+# >>> repo-starter
+# One line ending (LF) on every machine: the Claude Code hooks run in bash, and the
+# formatters expect LF. Windows-only scripts keep CRLF.
+* text=auto eol=lf
+*.sh text eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+# <<< repo-starter

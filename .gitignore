@@ -1,0 +1,14 @@
+# >>> repo-starter
+# Local secrets: the real values. .env.example (names only) stays tracked.
+.env
+.env.*
+!.env.example
+# Claude Code: personal settings, worktrees, and subagent scratch files.
+.claude/settings.local.json
+.claude/worktrees/
+.sdd/
+__pycache__/
+.venv/
+.pytest_cache/
+.ruff_cache/
+# <<< repo-starter
